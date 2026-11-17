@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Testes + cobertura mínima de 80% no domínio e na aplicação
+        run: pytest --cov=app/domain --cov=app/application --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  vulnerability-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: pip-audit (vulnerabilidades nas dependências)
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt | tee pip-audit-report.txt
+      - name: Bandit (análise estática de segurança do código)
+        run: |
+          pip install bandit
+          bandit -r app -f txt -o bandit-report.txt || true
+      - name: Trivy - dependências, configuração e Dockerfile
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          format: table
+          output: trivy-report.txt
+          exit-code: '0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relatorios-de-seguranca
+          path: |
+            pip-audit-report.txt
+            bandit-report.txt
+            trivy-report.txt
